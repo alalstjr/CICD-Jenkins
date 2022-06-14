@@ -106,15 +106,6 @@ Jenkins는 빌드를 자동화 시키기 위해 사용한다.
 
 젠킨스를 통해 지속적인 통합 (CI: Continuous Integration)을 행할 수 있다.
 
-# Mac Os 설치방법
-
-https://www.youtube.com/watch?v=HjfrsAChjzA
-
-# Jenkins 실행 중지
-
-$ sudo launchctl unload /Library/LaunchDaemons/org.jenkins-ci.plist
-$ sudo launchctl load /Library/LaunchDaemons/org.jenkins-ci.plist
-
 # Jenkins 설치 & Gradle
 
 Jenkins 는 Java 8 and 11 에서 동작하므로 두버전 중 하나가 있어야 합니다.
@@ -175,38 +166,387 @@ mac 의 경우 jenkins 권한이 root 폴더 변경 권한이 없으므로 proje
 이제 모든설정이 끝났습니다. 
 생성한 아이템으로 들어가서 Build Now 를 클릭해 실행합니다.
 
-# 에러발생시 조치
+# Docker Install
 
-현상
-launchdaemon으로 등록되어 있어서 자동으로 실행이된다(컴터 켤때마다)
-근데 갑자기 페이지를 띄울수 없다고 나온다.
-ERR_CONNECTION_REFUSED브라우져에서 이런 에러를 내보낸다. 
+~~~
+sudo su
+yum update -y
+yum install docker -y
+service docker start
+systemctl status docker.service
+~~~
 
-추적
-각종로그참고
-1.jenkins 로그  /var/log/jenkins/jenkins.log
+# Jenkins Docker 설치
+~~~
+docker pull jenkins/jenkins:lts
 
-Dec 17 00:30:00 Mac-mini newsyslog[3784]: logfile turned over
+docker run --name jenkins 
+-d 
+--restart always 
+-p 8081:8080
+-p 50000:50000 
+-e TZ=Asia/Seoul  
+-v $PWD/jenkins_home:/var/jenkins_home
+-u root 
+-v /var/run/docker.sock:/var/run/docker.sock  
+-v /usr/bin/docker:/usr/bin/docker 
+jenkins/jenkins
+~~~
 
-아무 정보도 얻을수 없어서 다른 로그를 분석햇다.
+## 만약 설치 오류생기면 jenkins 최신 버전으로 Update
 
-2.system.log /var/log/system.log
-com.apple.xpc.launchd[1] (org.jenkins-ci[965]): Service could not initialize: 14B25: xpcproxy + 14045 [1344][1016C726-9ACF-3A24-9C51-A279F5C6B167]: 0xd
+~~~
+docker exec -it -u 0 jenkins bash
+apt-get update
+apt-get install wget
+wget http://updates.jenkins-ci.org/download/war/${newVersion}/jenkins.war
+mv ./jenkins.war /usr/share/jenkins/
+chown jenkins:jenkins /usr/share/jenkins/jenkins.war
+exit
+~~~
 
-구글로 검색해본결과
+## 실행 포트 확인
 
-http://stackoverflow.com/questions/26483089/launchd-is-not-starting-jenkins-server-on-os-x-yosemite
-스택오버플로어에 자세히 나와있다.
-shutdown하거나 systemerror가 있을때 로그에 기록해야 하는데 퍼미션이 문제라고 한다.
-그래서 퍼미션을 고쳐주면 된다. 
+> netstat -antp
+
+# Node 프로젝트
+
+## Node JS 플러그인 설치
+
+Jenkins 관리 -> Plugin Manager (플러그인 관리) -> 설치 가능 -> Nodejs
+Global Tool Configuration -> NodeJS Add
+
+## SSH Over 플로그인 설치
+
+Jenkins 관리 -> Plugin Manager (플러그인 관리) -> 설치 가능 -> publish over ssh
+
+### Git SSH 연결하기 위한 작업
+
+~~~
+sudo mkdir $PWD/jenkins_home/.ssh
+sudo chmod 700 $PWD/jenkins_home/.ssh
+sudo ssh-keygen -t rsa
+cat $PWD/jenkins_home/.ssh/id_rsa.pub
+
+$PWD/jenkins_home/.ssh/id_rsa
+/home/ec2-user/jenkins_home/.ssh/id_rsa
+~~~
+값 복사 후 git ssh 에 등록
+https://github.com/settings/keys
+
+# 새로운 EC2 에 Node JS Docker 설치
+
+실 서버 EC2
+~~~
+docker pull nginx
+
+docker run --name ${name}
+-d 
+--restart always 
+-p 80:80
+-v $PWD:/usr/share/nginx/html nginx
+~~~
+
+vim 설치 & UTF-8 설정
+~~~
+docker exec -it nginx /bin/bash
+apt-get update
+apt-get install vim nano -y
+
+vim /etc/vim/vimrc
+set encoding=utf-8
+set fileencodings=utf-8,cp949
+~~~
+
+Nginx 커스텀 설정파일 적용
+~~~
+cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.back
+vim /etc/nginx/conf.d/nginx.http.conf
+~~~
+
+> nginx.http.conf
+~~~
+server {
+    listen       80;
+    listen       [::]:80;
+
+    root /usr/share/nginx/html/build;
+    location / {
+            try_files $uri /index.html;
+    }
+
+    server_name  chat.neodigm.com;
+    return 301   https://$host$request_uri;
+
+    error_page 404 /404.html;
+    location = /404.html {
+    }
+
+    error_page 500 502 503 504 /50x.html;
+    location = /50x.html {
+    }
+}
+~~~
+
+~~~
+vim /etc/nginx/conf.d/nginx.https.conf
+~~~
+
+> nginx.https.conf
+~~~
+# Settings for a TLS enabled server.
+server {
+    listen       443 ssl http2;
+    listen       [::]:443 ssl http2;
+    server_name  chat.neodigm.com;
+    client_max_body_size 16M;
+
+    ssl_protocols           TLSv1.2;
+    ssl_certificate         "/usr/share/nginx/html/ssl/ssl-bundle.crt";
+    ssl_certificate_key     "/usr/share/nginx/html/ssl/private.key";
+    ssl_session_cache       shared:SSL:1m;
+    ssl_session_timeout     10m;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA:ECDHE-RSA-AES256-SHA:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384";
+
+    proxy_cache off;
+    proxy_store off;
+
+    root /usr/share/nginx/html/build;
+    index index.html index.htm;
+
+    location / {
+            try_files $uri $uri/ /index.html;
+    }
+
+    location /api {
+            proxy_pass              https://localhost:8443;
+
+            #proxy_redirect          http://localhost:3000 https://localhost:3000;
+            proxy_set_header        Host                    $host;
+            proxy_set_header        X-Real-IP               $remote_addr;
+            proxy_set_header        X-Forwarded-Host        $host;
+            proxy_set_header        X-Forwarded-Server      $host;
+            proxy_set_header        X-Forwarded-For         $proxy_add_x_forwarded_for;
+            proxy_set_header        X-NginX-Proxy true;
+
+            # For WebSocket upgrade header
+            proxy_http_version      1.1;
+            proxy_set_header        Upgrade $http_upgrade;
+            proxy_set_header        Connection "upgrade";
+
+            # set all cookies to secure
+            #proxy_cookie_path / "/; secure; SameSite=None";
+
+            aio threads=default;
+    }
+
+    error_page 404 /404.html;
+        location = /40x.html {
+    }
+
+    error_page 500 502 503 504 /50x.html;
+        location = /50x.html {
+    }
+}
+~~~
+
+exit
+
+## Publish over SSH 설정
+
+Jenkins 홈페이지 구성 설정에 [Publish over SSH] -> [SSH Servers] 설정
+
+Key : pem 키 등록
+
+보안그룹에 22 포트로 연결 해주어야 합니다.
+
+Name : [프로젝트 명]
+Hostname : ec2 ip 주소
+Username : ec2-user
+
+## Item 생성
+
+GitHub project -> Project url -> https://github.com/alalstjr
+
+### 그후 젠킨스 SSH Token 등록
+
+소스 코드 관리 -> Repositories -> Repository URL -> git@github.com:alalstjr/neodigm-websocket-client.git
+Credentials -> Add Credentials -> Private Key -> Enter directly
+
+### 아래 경로의 Key 입력
+
+cat /home/jenkins/.ssh/id_rsa
+
+Check -> GitHub hook trigger for GITScm polling
+Check -> Provide Node & npm bin/ folder to PATH
+
+Build -> execute shell -> npm install -> npm run build
+
+# 프로젝트 실행중인 EC2 Docker SH 파일 생성
+
+vim docker.sh
+~~~
+#!/bin/bash
+# Build N Run DB Container
+# 2020. 09. 18 Zini
+
+docker_username="nginx_c"
+db_image_name="nginx"
+db_container_name="nginx"
+version="1.0.0"
+port=80
+
+echo "## Automation docker-database build and run ##"
+
+# remove container
+echo "=> Remove previous container..."
+docker rm -f ${db_container_name}
+
+# remove image
+echo "=> Remove previous image..."
+docker rmi -f ${docker_username}/${db_image_name}:${version}
+
+# new-build/re-build docker image
+echo "=> Build new image..."
+docker build --tag ${docker_username}/${db_image_name}:${version} .
+
+# Run container
+echo "=> Run container..."
+docker run --name ${docker_username} -d --restart always -p ${port}:${port} -v $PWD/build:/usr/share/nginx/html ${db_container_name}
+~~~
+sudo chmod 755 ./docker.sh
+./docker.sh 으로 실행
+
+# Git WebHook 연동
+
+Jenkins와 Github을 연동하기 위해 Github Access Token을 생성합니다.
+우측 상단 초상화 클릭
+Settings 선택
+Developer settings 선택
+Personal access tokens 선택
+Generate new token 선택
+이름 입력 (ex: Jenkins-Local)
+Select scopes - repo, admin:repo_hook 선택
+Generate token 선택
+생성한 토큰 복사 (복사 아이콘 선택)
+
+Jenkins에서 방금 생성한 Token을 등록합니다.
+Manage Jenkins 선택
+Manage Credentials 선택
+global 선택
+Add credentials 선택
+Kind - Secret text 선택
+Secret - Secret 입력 (1.1에서 복사한 토큰 붙여넣기)
+ID - GitHub ID 입력
+OK 선택
+
+연동
+Manage Jenkins 선택
+Configure System 선택
+Add GitHub Server 선택
+Name - GitHub ID 입력
+Credentials - 1.2에서 생성한 Credentials 선택
+Test Connection 선택 - 정상적으로 연결 됐는지 확인
+Manage hooks 선택 (Checked)
+Save 선택
+
+연동할 Github repository 접속
+Settings 선택
+Webhooks 선택
+Add webhook 선택
+
+Payload URL 입력 - 2.1에서 복사한 주소 + /github-webhook/ 추가
+Content type - application/json 선택
+Add webhook 추가
+
+https://www.comtec.kr/2021/07/22/jenkins-webhook-설정/ 참고
+
+# 프로젝트 생성
+
+- General
+  - GitHub project
+    - url : https://github.com/alalstjr/
+- 소스 코드 관리
+  - Git
+    - Repository URL : git@github.com:alalstjr/neodigm-websocket-client.git
+- 빌드 유발
+  - GitHub hook trigger for GITScm polling
+- 빌드 환경
+  - Provide Node & npm bin/ folder to PATH
+- Build
+  - Execute shell
+    - npm install 
+    - npm run build
+- 빌드 후 조치
+  - Send build artifacts over SSH
+    - Transfers
+      - Source files : build/
+      - Remote directory :
+      - Exec command
+        - sudo ./docker.sh
+
+# Spring Boot Maven 프로젝트
+
+## Java 11 젠킨스 등록
+
+Jenkins EC2 에서 작업
+~~~
+docker exec -it {container_id} /bin/bash
+apt-get update
+apt-get install openjdk-11-jdk
+~~~
+
+System Configuration / Global tool configuration에 들어간다.
+JDK를 찾고 경로를 지정해준다.
+
+> /usr/lib/jvm/java-11-openjdk-arm64
+
+## Maven 플러그인 설치
+
+젠킨스 플러그인 Maven Integration 설치
+새로운 Item -> Maven project 으로 생성
+Build > Goals and options > clean package
+빌드 후 조치 -> SSH Publishers -> Source files -> target/
+
+## 프로젝트 실행중인 EC2 run SH 파일 생성
+
+SSL 프로젝트이 경우 인증서 [keystore.p12] 파일은 최상위 폴더 [/home/ec2-user] 에 위치한다
+
+spring.sh
+~~~
+#!/bin/bash
+
+sudo yum update -y
+#sudo yum install -y java-1.8.0-openjdk-devel.x86_64
+sudo yum install java-11-amazon-corretto -y
+sudo rm /etc/localtime
+sudo ln -sf /usr/share/zoneinfo/Asia/Seoul /etc/localtime
+REPOSITORY=/home/ec2-user/target
+PROJECTNAME=Neodigm-amazon-seller
+
+echo "> 현재 구동중인 애플리케이션 pid 확인"
+echo "$(pgrep -f $PROJECTNAME)"
+if [ -z $(pgrep -f $PROJECTNAME) ]; then
+    echo "> 현재 구동중인 애플리케이션이 없으므로 종료하지 않습니다."
+else
+    echo "> kill -2 $(pgrep -f $PROJECTNAME)"
+    sudo kill -9 $(pgrep -f $PROJECTNAME)
+    sleep 5
+fi
+echo "> 새 어플리케이션 배포"
+JAR_NAME=$(ls $REPOSITORY/ |grep $PROJECTNAME | tail -n 1)
+echo "> JAR Name: $PROJECTNAME"
+nohup sudo java -jar $REPOSITORY/*.jar &
+~~~
+sudo chmod 755 ./spring.sh
+./spring.sh 으로 실행
 
 # 참고
 
 https://itholic.github.io/qa-cicd/ - [CI/CD 란?]
-
 https://lemontia.tistory.com/660 - [Jenkins, SpringBoot, Gradle 사용 Jar로 빌드, 배포]
 https://miiingo.tistory.com/171 - [Jenkins Docker]
 https://velog.io/@minholee_93/Jenkins-Springboot-Gradle-Github-CodeDeploy-ELB-9ck5x7mt4q - [Jenkins AWS 배포]
 https://velog.io/@minholee_93/Jenkins-Springboot-Gradle-Github-CodeDeploy-ELB-2-1yk5ze6ky0 - [Jenkins AWS 배포]
-
 https://blog.mint-soft.com/entry/mac-jenkins-%EC%8B%A4%ED%96%89-%EC%97%90%EB%9F%AC - [mac jenkins 실행 에러]
