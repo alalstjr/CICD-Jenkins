@@ -209,215 +209,6 @@ exit
 
 > netstat -antp
 
-# Node 프로젝트
-
-## Node JS 플러그인 설치
-
-Jenkins 관리 -> Plugin Manager (플러그인 관리) -> 설치 가능 -> Nodejs
-Global Tool Configuration -> NodeJS Add
-
-## SSH Over 플로그인 설치
-
-Jenkins 관리 -> Plugin Manager (플러그인 관리) -> 설치 가능 -> publish over ssh
-
-### Git SSH 연결하기 위한 작업
-
-~~~
-sudo mkdir $PWD/jenkins_home/.ssh
-sudo chmod 700 $PWD/jenkins_home/.ssh
-sudo ssh-keygen -t rsa
-cat $PWD/jenkins_home/.ssh/id_rsa.pub
-
-$PWD/jenkins_home/.ssh/id_rsa
-/home/ec2-user/jenkins_home/.ssh/id_rsa
-~~~
-값 복사 후 git ssh 에 등록
-https://github.com/settings/keys
-
-# 새로운 EC2 에 Node JS Docker 설치
-
-실 서버 EC2
-~~~
-docker pull nginx
-
-docker run --name ${name}
--d 
---restart always 
--p 80:80
--v $PWD:/usr/share/nginx/html nginx
-~~~
-
-vim 설치 & UTF-8 설정
-~~~
-docker exec -it nginx /bin/bash
-apt-get update
-apt-get install vim nano -y
-
-vim /etc/vim/vimrc
-set encoding=utf-8
-set fileencodings=utf-8,cp949
-~~~
-
-Nginx 커스텀 설정파일 적용
-~~~
-cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.back
-vim /etc/nginx/conf.d/nginx.http.conf
-~~~
-
-> nginx.http.conf
-~~~
-server {
-    listen       80;
-    listen       [::]:80;
-
-    root /usr/share/nginx/html/build;
-    location / {
-            try_files $uri /index.html;
-    }
-
-    server_name  chat.neodigm.com;
-    return 301   https://$host$request_uri;
-
-    error_page 404 /404.html;
-    location = /404.html {
-    }
-
-    error_page 500 502 503 504 /50x.html;
-    location = /50x.html {
-    }
-}
-~~~
-
-~~~
-vim /etc/nginx/conf.d/nginx.https.conf
-~~~
-
-> nginx.https.conf
-~~~
-# Settings for a TLS enabled server.
-server {
-    listen       443 ssl http2;
-    listen       [::]:443 ssl http2;
-    server_name  chat.neodigm.com;
-    client_max_body_size 16M;
-
-    ssl_protocols           TLSv1.2;
-    ssl_certificate         "/usr/share/nginx/html/ssl/ssl-bundle.crt";
-    ssl_certificate_key     "/usr/share/nginx/html/ssl/private.key";
-    ssl_session_cache       shared:SSL:1m;
-    ssl_session_timeout     10m;
-    ssl_prefer_server_ciphers on;
-    ssl_ciphers "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA:ECDHE-RSA-AES256-SHA:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384";
-
-    proxy_cache off;
-    proxy_store off;
-
-    root /usr/share/nginx/html/build;
-    index index.html index.htm;
-
-    location / {
-            try_files $uri $uri/ /index.html;
-    }
-
-    location /api {
-            proxy_pass              https://localhost:8443;
-
-            #proxy_redirect          http://localhost:3000 https://localhost:3000;
-            proxy_set_header        Host                    $host;
-            proxy_set_header        X-Real-IP               $remote_addr;
-            proxy_set_header        X-Forwarded-Host        $host;
-            proxy_set_header        X-Forwarded-Server      $host;
-            proxy_set_header        X-Forwarded-For         $proxy_add_x_forwarded_for;
-            proxy_set_header        X-NginX-Proxy true;
-
-            # For WebSocket upgrade header
-            proxy_http_version      1.1;
-            proxy_set_header        Upgrade $http_upgrade;
-            proxy_set_header        Connection "upgrade";
-
-            # set all cookies to secure
-            #proxy_cookie_path / "/; secure; SameSite=None";
-
-            aio threads=default;
-    }
-
-    error_page 404 /404.html;
-        location = /40x.html {
-    }
-
-    error_page 500 502 503 504 /50x.html;
-        location = /50x.html {
-    }
-}
-~~~
-
-exit
-
-## Publish over SSH 설정
-
-Jenkins 홈페이지 구성 설정에 [Publish over SSH] -> [SSH Servers] 설정
-
-Key : pem 키 등록
-
-보안그룹에 22 포트로 연결 해주어야 합니다.
-
-Name : [프로젝트 명]
-Hostname : ec2 ip 주소
-Username : ec2-user
-
-## Item 생성
-
-GitHub project -> Project url -> https://github.com/alalstjr
-
-### 그후 젠킨스 SSH Token 등록
-
-소스 코드 관리 -> Repositories -> Repository URL -> git@github.com:alalstjr/neodigm-websocket-client.git
-Credentials -> Add Credentials -> Private Key -> Enter directly
-
-### 아래 경로의 Key 입력
-
-cat /home/jenkins/.ssh/id_rsa
-
-Check -> GitHub hook trigger for GITScm polling
-Check -> Provide Node & npm bin/ folder to PATH
-
-Build -> execute shell -> npm install -> npm run build
-
-# 프로젝트 실행중인 EC2 Docker SH 파일 생성
-
-vim docker.sh
-~~~
-#!/bin/bash
-# Build N Run DB Container
-# 2020. 09. 18 Zini
-
-docker_username="nginx_c"
-db_image_name="nginx"
-db_container_name="nginx"
-version="1.0.0"
-port=80
-
-echo "## Automation docker-database build and run ##"
-
-# remove container
-echo "=> Remove previous container..."
-docker rm -f ${db_container_name}
-
-# remove image
-echo "=> Remove previous image..."
-docker rmi -f ${docker_username}/${db_image_name}:${version}
-
-# new-build/re-build docker image
-echo "=> Build new image..."
-docker build --tag ${docker_username}/${db_image_name}:${version} .
-
-# Run container
-echo "=> Run container..."
-docker run --name ${docker_username} -d --restart always -p ${port}:${port} -v $PWD/build:/usr/share/nginx/html ${db_container_name}
-~~~
-sudo chmod 755 ./docker.sh
-./docker.sh 으로 실행
-
 # Git WebHook 연동
 
 Jenkins와 Github을 연동하기 위해 Github Access Token을 생성합니다.
@@ -462,6 +253,387 @@ Add webhook 추가
 
 https://www.comtec.kr/2021/07/22/jenkins-webhook-설정/ 참고
 
+# Node 프로젝트
+
+## 플러그인 설치 항목
+
+NodeJS
+Maven IntegrationVersion
+Publish Over SSHVersion
+GIT serverVersion
+
+## Node JS 플러그인 설치
+
+Jenkins 관리 -> Plugin Manager (플러그인 관리) -> 설치 가능 -> Nodejs
+Global Tool Configuration -> NodeJS Add
+
+# SSH Over 플로그인 설치
+
+Jenkins 관리 -> Plugin Manager (플러그인 관리) -> 설치 가능 -> publish over ssh
+
+# Git SSH 연결하기 위한 작업
+
+~~~
+sudo mkdir $PWD/jenkins_home/.ssh
+sudo chmod 700 $PWD/jenkins_home/.ssh
+sudo ssh-keygen -t rsa
+cat $PWD/jenkins_home/.ssh/id_rsa.pub
+
+$PWD/jenkins_home/.ssh/id_rsa
+/home/ec2-user/jenkins_home/.ssh/id_rsa
+~~~
+값 복사 후 git ssh 에 등록
+https://github.com/settings/keys
+
+# Publish over SSH 설정
+
+Jenkins 홈페이지 구성 설정에 [Publish over SSH] -> [SSH Servers] 설정
+
+Key : pem 키 등록
+
+보안그룹에 22 포트로 연결 해주어야 합니다.
+
+Name : [프로젝트 명]
+Hostname : ec2 ip 주소
+Username : ec2-user
+
+# 새로운 EC2 에 Nginx Docker 설치
+
+실 서버 EC2
+~~~
+docker pull nginx
+
+docker run --name ${name}
+-d 
+--restart always 
+-p 80:80
+-v $PWD:/usr/share/nginx/html nginx
+~~~
+
+vim 설치 & UTF-8 설정
+~~~
+docker exec -it nginx /bin/bash
+apt-get update
+apt-get install vim nano -y
+
+vim /etc/vim/vimrc
+set encoding=utf-8
+set fileencodings=utf-8,cp949
+~~~
+
+Nginx 커스텀 설정파일 적용
+~~~
+cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.back
+vim /etc/nginx/conf.d/nginx.http.conf
+~~~
+
+> nginx.http.conf
+~~~
+server {
+    listen       80;
+    listen       [::]:80;
+
+    root /usr/share/nginx/html/client/build;
+    location / {
+            try_files $uri /index.html;
+    }
+
+    server_name  chat.neodigm.com;
+    return 301   https://$host$request_uri;
+
+    error_page 404 /404.html;
+    location = /404.html {
+    }
+
+    error_page 500 502 503 504 /50x.html;
+    location = /50x.html {
+    }
+}
+~~~
+
+~~~
+vim /etc/nginx/conf.d/nginx.https.conf
+~~~
+
+> nginx.https.conf
+~~~
+# Settings for a TLS enabled server.
+server {
+    listen       443 ssl http2;
+    listen       [::]:443 ssl http2;
+    server_name  chat.neodigm.com;
+    client_max_body_size 16M;
+
+    ssl_protocols           TLSv1.2;
+    ssl_certificate         "/usr/share/nginx/html/ssl/ssl-bundle.crt";
+    ssl_certificate_key     "/usr/share/nginx/html/ssl/private.key";
+    ssl_session_cache       shared:SSL:1m;
+    ssl_session_timeout     10m;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA:ECDHE-RSA-AES256-SHA:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384";
+
+    proxy_cache off;
+    proxy_store off;
+
+    root /usr/share/nginx/html/client/build;
+    index index.html index.htm;
+
+    location / {
+            try_files $uri $uri/ /index.html;
+    }
+
+    location /api {
+            proxy_pass              https://localhost:8443;
+
+            #proxy_redirect          http://localhost:3000 https://localhost:3000;
+            proxy_set_header        Host                    $host;
+            proxy_set_header        X-Real-IP               $remote_addr;
+            proxy_set_header        X-Forwarded-Host        $host;
+            proxy_set_header        X-Forwarded-Server      $host;
+            proxy_set_header        X-Forwarded-For         $proxy_add_x_forwarded_for;
+            proxy_set_header        X-NginX-Proxy true;
+
+            # For WebSocket upgrade header
+            proxy_http_version      1.1;
+            proxy_set_header        Upgrade $http_upgrade;
+            proxy_set_header        Connection "upgrade";
+
+            # set all cookies to secure
+            #proxy_cookie_path / "/; secure; SameSite=None";
+
+            aio threads=default;
+    }
+
+    error_page 404 /404.html;
+        location = /40x.html {
+    }
+
+    error_page 500 502 503 504 /50x.html;
+        location = /50x.html {
+    }
+}
+~~~
+
+exit
+
+만든 도커 이미지 화 하기
+
+> docker commit nginx nginx_base
+
+## Item 생성
+
+GitHub project -> Project url -> https://github.com/alalstjr
+
+### 그후 젠킨스 SSH Token 등록
+
+소스 코드 관리 -> Repositories -> Repository URL -> git@github.com:alalstjr/neodigm-websocket-client.git
+Credentials -> Add Credentials -> Private Key -> Enter directly
+
+### 아래 경로의 Key 입력
+
+cat /home/jenkins/.ssh/id_rsa
+
+Check -> GitHub hook trigger for GITScm polling
+Check -> Provide Node & npm bin/ folder to PATH
+
+Build -> execute shell -> npm install -> npm run build
+
+## 프로젝트 실행중인 EC2 Nginx Docker SH 파일 생성
+
+vim docker.sh
+~~~
+#!/bin/bash
+# Build N Run DB Container
+# 2020. 09. 18 Zini
+
+docker_username="nginx_c"
+db_image_name="nginx_base"
+db_container_name="nginx_base"
+version="1.0.0"
+port=80
+
+echo "## Automation docker-database build and run ##"
+
+# remove container
+echo "=> Remove previous container..."
+# docker rm -f ${db_container_name}
+docker rm -f ${docker_username}
+
+# remove image
+# echo "=> Remove previous image..."
+# docker rmi -f ${docker_username}/${db_image_name}:${version}
+
+# new-build/re-build docker image
+# echo "=> Build new image..."
+# docker build --tag ${docker_username}/${db_image_name}:${version} .
+
+# Run container
+echo "=> Run container..."
+docker run --name ${docker_username} -d --restart always -p ${port}:${port} -v $PWD:/usr/share/nginx/html ${db_container_name}
+~~~
+sudo chmod 755 ./docker.sh
+./docker.sh 으로 실행
+
+# 새로운 EC2 에 Nginx 설치
+
+> sudo amazon-linux-extras install nginx1 -y
+> cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.back
+> vim /etc/nginx/nginx.conf
+
+~~~
+# For more information on configuration, see:
+#   * Official English Documentation: http://nginx.org/en/docs/
+#   * Official Russian Documentation: http://nginx.org/ru/docs/
+
+user                    nginx;
+worker_processes        auto;
+worker_rlimit_nofile    204800;
+worker_cpu_affinity     auto;
+error_log               /var/log/nginx/error.log;
+pid                     /run/nginx.pid;
+
+# 스레드
+thread_pool default threads=32 max_queue=65536;
+
+# Load dynamic modules. See /usr/share/doc/nginx/README.dynamic.
+include /usr/share/nginx/modules/*.conf;
+
+events {
+        # 동시에 8192개의 요청을 받을 수 있다.
+        worker_connections      8192;
+        # 순차적으로 요청을 받지 않고 동시에 요청을 접수합니다.
+        multi_accept    on;
+        # Linux 2.6+ 이상에서 사용하는 효율적인 이벤트 처리방식
+        use                     epoll;
+}
+
+http {
+    log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+                      '$status $body_bytes_sent "$http_referer" '
+                      '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log  /var/log/nginx/access.log  main;
+
+    sendfile            on;
+    tcp_nopush          on;
+    tcp_nodelay         on;
+    keepalive_timeout   15;
+    keepalive_requests  100000;
+    types_hash_max_size 4096;
+
+    reset_timedout_connection   on;
+    client_body_timeout         10;
+    send_timeout                2;
+
+    include             /etc/nginx/mime.types;
+    default_type        application/octet-stream;
+
+    # Load modular configuration files from the /etc/nginx/conf.d directory.
+    # See http://nginx.org/en/docs/ngx_core_module.html#include
+    # for more information.
+    include /etc/nginx/conf.d/*.conf;
+
+    server {
+        listen       80;
+        listen       [::]:80;
+
+        root /home/ec2-user/client/build;
+        location / {
+                try_files $uri /index.html;
+        }
+
+        server_name  chat.neodigm.com;
+        return 301   https://$host$request_uri;
+
+        include /etc/nginx/default.d/*.conf;
+
+        error_page 404 /404.html;
+        location = /404.html {
+        }
+
+        error_page 500 502 503 504 /50x.html;
+        location = /50x.html {
+        }
+    }
+
+    # Settings for a TLS enabled server.
+    server {
+        listen       443 ssl http2;
+        listen       [::]:443 ssl http2;
+        server_name  chat.neodigm.com;
+        client_max_body_size 16M;
+
+        ssl_protocols           TLSv1.2;
+        ssl_certificate         "/home/ec2-user/ssl/ssl-bundle.crt";
+        ssl_certificate_key     "/home/ec2-user/ssl/private.key";
+        ssl_session_cache       shared:SSL:1m;
+        ssl_session_timeout     10m;
+        ssl_prefer_server_ciphers on;
+        ssl_ciphers "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA:ECDHE-RSA-AES256-SHA:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384";
+
+        proxy_cache off;
+        proxy_store off;
+
+        root /home/ec2-user/client/build;
+        index index.html index.htm;
+
+        location / {
+                try_files $uri $uri/ /index.html;
+        }
+
+        location /api {
+                proxy_pass              https://localhost:8443;
+
+                #proxy_redirect          http://localhost:3000 https://localhost:3000;
+                proxy_set_header        Host                    $host;
+                proxy_set_header        X-Real-IP               $remote_addr;
+                proxy_set_header        X-Forwarded-Host        $host;
+                proxy_set_header        X-Forwarded-Server      $host;
+                proxy_set_header        X-Forwarded-For         $proxy_add_x_forwarded_for;
+                proxy_set_header        X-NginX-Proxy true;
+
+                # For WebSocket upgrade header
+                proxy_http_version      1.1;
+                proxy_set_header        Upgrade $http_upgrade;
+                proxy_set_header        Connection "upgrade";
+
+                # set all cookies to secure
+                #proxy_cookie_path / "/; secure; SameSite=None";
+
+                aio threads=default;
+        }
+
+        include /etc/nginx/default.d/*.conf;
+
+        error_page 404 /404.html;
+            location = /40x.html {
+        }
+
+        error_page 500 502 503 504 /50x.html;
+            location = /50x.html {
+        }
+    }
+}
+~~~
+
+~~~
+chmod 711 /
+chmod 711 /bin
+chmod 711 /boot
+chmod 711 /dev
+chmod 711 /etc
+chmod 711 /home
+chmod 711 /mnt
+chmod 711 /opt
+chmod 711 /proc
+chmod 711 /usr
+chmod 711 /usr/local
+chmod 711 /var
+~~~
+
+권한 설정을 해주어야 ec2-user 폴더에 접근할 수 있다.
+추가로 미리 client/build 폴더를 생성하면 안된다 권한으로 인해 접근을 못한다.
+
 # 프로젝트 생성
 
 - General
@@ -482,9 +654,11 @@ https://www.comtec.kr/2021/07/22/jenkins-webhook-설정/ 참고
   - Send build artifacts over SSH
     - Transfers
       - Source files : build/
-      - Remote directory :
+      - Remote directory : ./client
       - Exec command
         - sudo ./docker.sh
+    - 고급
+      - Clean remote : 체크
 
 # Spring Boot Maven 프로젝트
 
@@ -494,7 +668,7 @@ Jenkins EC2 에서 작업
 ~~~
 docker exec -it {container_id} /bin/bash
 apt-get update
-apt-get install openjdk-11-jdk
+apt-get install openjdk-11-jdk -y
 ~~~
 
 System Configuration / Global tool configuration에 들어간다.
@@ -508,6 +682,7 @@ JDK를 찾고 경로를 지정해준다.
 새로운 Item -> Maven project 으로 생성
 Build > Goals and options > clean package
 빌드 후 조치 -> SSH Publishers -> Source files -> target/
+Exec command -> ./spring.sh
 
 ## 프로젝트 실행중인 EC2 run SH 파일 생성
 
