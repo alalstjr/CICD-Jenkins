@@ -176,7 +176,7 @@ service docker start
 systemctl status docker.service
 ~~~
 
-# Jenkins Docker 설치
+# Jenkins Docker 설치 - AWS Linux 환경
 ~~~
 docker pull jenkins/jenkins:lts
 
@@ -191,6 +191,21 @@ docker run --name jenkins
 -v /var/run/docker.sock:/var/run/docker.sock  
 -v /usr/bin/docker:/usr/bin/docker 
 jenkins/jenkins
+~~~
+
+# Jenkins Docker 설치 - Oracle Linux 환경
+~~~
+1. 설치에 필요한 패키지를 설치하고 리포지토리를 추가한다.
+dnf install -y dnf-utils zip unzip
+dnf config-manager --add-repo=https://download.docker.com/linux/centos/docker-ce.repo
+
+2. 도커를 설치한다.
+dnf remove -y runc
+dnf install -y docker-ce --nobest
+
+3. 도커 서비스를 시작한다.
+systemctl enable docker.service
+systemctl start docker.service
 ~~~
 
 ## 만약 설치 오류생기면 jenkins 최신 버전으로 Update
@@ -289,7 +304,7 @@ https://github.com/settings/keys
 
 Jenkins 홈페이지 구성 설정에 [Publish over SSH] -> [SSH Servers] 설정
 
-Key : pem 키 등록
+Key : ec2 혹은 접근하는 pem 키 등록
 
 보안그룹에 22 포트로 연결 해주어야 합니다.
 
@@ -656,7 +671,7 @@ chmod 711 /var
       - Source files : build/
       - Remote directory : ./client
       - Exec command
-        - sudo ./docker.sh
+        - (만약 docker 로 nginx 를 돌리는 경우에만 넣는다) sudo ./docker.sh
     - 고급
       - Clean remote : 체크
 
@@ -664,7 +679,7 @@ chmod 711 /var
 
 ## Java 11 젠킨스 등록
 
-Jenkins EC2 에서 작업
+Jenkins AWS EC2 에서 작업
 ~~~
 docker exec -it {container_id} /bin/bash
 apt-get update
