@@ -697,7 +697,21 @@ JDK를 찾고 경로를 지정해준다.
 새로운 Item -> Maven project 으로 생성
 Build > Goals and options > clean package
 빌드 후 조치 -> SSH Publishers -> Source files -> target/
-Exec command -> ./spring.sh
+Exec command -> 아래 코드를 삽입
+~~~
+$NAME = Neodigm-websocket-restapi
+sudo yum install java-11-amazon-corretto -y
+pid=$(ps -eaf | grep $NAME.jar | grep -v "grep" | awk '{print $2}')
+
+if [ "$pid" == "" ]; then
+    echo "demo web application is not running."
+else
+    kill -9 $pid
+    echo "demo web application process killed forcefully. (pid : $pid)"
+fi
+
+nohup  java -jar ./target/*.jar 2>> /dev/null >> /dev/null &
+~~~
 
 ## 프로젝트 실행중인 EC2 run SH 파일 생성
 
