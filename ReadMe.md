@@ -892,7 +892,7 @@ AWS CodeDeploy
 11. S3 Prefix
 12. {폴더 명}
 13. Include Files
-    1. appspec.yml, build/*, sh/*
+    1. appspec.yml, sh/**, build/**
 14. Exclude Files
     1. node_modules
 15. Use Access/Secret keys
@@ -912,8 +912,10 @@ AWS CodeDeploy
    1. {버킷 이름}
 8. S3 Prefix
    1. {폴더 명}
-9. Use Access/Secret keys
-   1. 위에서 만든 jenkins-user 사용자 보안 자격증명 정보 입력
+9. Include Files
+   1. appspec.yml, sh/**, target/*.jar, ssl/**
+10. Use Access/Secret keys
+    1. 위에서 만든 jenkins-user 사용자 보안 자격증명 정보 입력
 
 ## appspec.yml 파일 생성 
 
