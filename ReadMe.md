@@ -959,18 +959,17 @@ sudo yum update -y
 sudo yum install java-11-amazon-corretto -y
 sudo rm /etc/localtime
 sudo ln -sf /usr/share/zoneinfo/Asia/Seoul /etc/localtime
-sudo yum install git -y
 
 PROJECT_NAME=Neodigm-websocket-restapi
 PROJECT_ROOT="/home/ec2-user/api"
-JAR_FILE_TARGET="$PROJECT_ROOT/target/$PROJECT_NAME.jar"
+JAR_FILE="$PROJECT_ROOT/target/$PROJECT_NAME.jar"
 
 DEPLOY_LOG="$PROJECT_ROOT/deploy.log"
 
 TIME_NOW=$(date +%c)
 
 # 현재 구동 중인 애플리케이션 pid 확인
-CURRENT_PID=$(pgrep -f $JAR_FILE_TARGET)
+CURRENT_PID=$(pgrep -f $JAR_FILE)
 
 # 프로세스가 켜져 있으면 종료
 if [ -z $CURRENT_PID ]; then
@@ -979,7 +978,6 @@ else
   echo "$TIME_NOW > 실행중인 $CURRENT_PID 애플리케이션 종료 " >> $DEPLOY_LOG
   kill -15 $CURRENT_PID
 fi
-
 ~~~
 sudo chmod 755 ./stop.sh
 
@@ -989,22 +987,21 @@ sudo chmod 755 ./stop.sh
 
 PROJECT_NAME=Neodigm-websocket-restapi
 PROJECT_ROOT="/home/ec2-user/api"
-JAR_FILE="$PROJECT_ROOT/$PROJECT_NAME.jar"
-JAR_FILE_TARGET="$PROJECT_ROOT/target/$PROJECT_NAME.jar"
+JAR_FILE="$PROJECT_ROOT/target/$PROJECT_NAME.jar"
 
-APP_LOG="$PROJECT_ROOT/application.log"
-ERROR_LOG="$PROJECT_ROOT/error.log"
+#APP_LOG="$PROJECT_ROOT/application.log"
+#ERROR_LOG="$PROJECT_ROOT/error.log"
 DEPLOY_LOG="$PROJECT_ROOT/deploy.log"
 
 TIME_NOW=$(date +%c)
 
 # build 파일 복사
-echo "$TIME_NOW > $JAR_FILE 파일 복사" >> $DEPLOY_LOG
-cp $JAR_FILE_TARGET $JAR_FILE
+#echo "$TIME_NOW > $JAR_FILE 파일 복사" >> $DEPLOY_LOG
 
 # jar 파일 실행
+#nohup java -Dspring.profiles.active=deploy -jar $JAR_FILE > $APP_LOG 2> $ERROR_LOG &
 echo "$TIME_NOW > $JAR_FILE 파일 실행" >> $DEPLOY_LOG
-nohup java -Dspring.profiles.active=deploy -jar $JAR_FILE > $APP_LOG 2> $ERROR_LOG &
+nohup java -Dspring.profiles.active=deploy -jar $JAR_FILE > $PROJECT_ROOT/nohup.out 2>&1 &
 
 CURRENT_PID=$(pgrep -f $JAR_FILE)
 echo "$TIME_NOW > 실행된 프로세스 아이디 $CURRENT_PID 입니다." >> $DEPLOY_LOG
@@ -1014,21 +1011,26 @@ sudo chmod 755 ./start.sh
 -Dspring.profiles.active=deploy 설정을 주는 이유는 spring properties 절대경로 구분위해서
 예시로 logging.file.path = /home/ec2-user/api/logs 이런식이다.
 
+nohup 실행에 [ $PROJECT_ROOT/nohup.out 2>&1 & ] 을 넣은 이유는 sh 종료 시점을 확인해야하는데
+nohup.out 출력을 하지 않으면 무한 루프에 빠지기 때문에 넣어주었다.
+
 > health.sh
 ~~~
 #!/bin/bash
 IP=$(curl ifconfig.me)
 echo "> Health check 시작"
-echo "> curl -s https://$IP:8443/api/health "
+echo "> curl -s https://chat.neodigm.com/api/health"
+#echo "> curl -s https://$IP:8443/api/health"
 
 for RETRY_COUNT in {1..15}
 do
-  RESPONSE=$(curl -s https://$IP:8443/api/health)
+  RESPONSE=$(curl -s https://chat.neodigm.com/api/health)
   UP_COUNT=$(echo $RESPONSE | grep 'UP' | wc -l)
 
   if [ $UP_COUNT -ge 1 ]
   then # $up_count >= 1 ("UP" 문자열이 있는지 검증)
       echo "> Health check 성공"
+      rm -rf "/opt/codedeploy-agen/deployment-root"
       break
   else
       echo "> Health check의 응답을 알 수 없거나 혹은 status가 UP이 아닙니다."
@@ -1049,6 +1051,18 @@ exit 0
 sudo chmod 755 ./health.sh
 
 배포 이전에 api 폴더를 ec2 에 생성해준다.
+
+## codedeploy 덤프 파일 제거
+
+aws codedeploy 를 진행하다보면 dump 파일이 쌓이고 용량이 꽉차 오류가 출력되는 문제 확인
+
+> find / -xdev -name core -ls -o -path "/lib*" -prune
+
+로그 확인하여 덤프파일 확인 본인 같은 경우에는 codedeploy-agent 폴더에 빌드 파일이 쌓여 오류가 출력되었다.
+
+> rm -rf "/opt/codedeploy-agen/deployment-root"
+
+health 체크 완료 후 덤프파일을 바로 지우도록 수정했다.
 
 # 참고
 
