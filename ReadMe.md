@@ -885,8 +885,10 @@ AWS CodeDeploy
 6. AWS Region
    1. 서울 리전
 7. S3 Bucket
-   1. jenkins-deploy-bucket
-8. Use Access/Secret keys
+   1. {버킷 이름}
+8. S3 Prefix
+   1. {폴더 명}
+9. Use Access/Secret keys
    1. 위에서 만든 jenkins-user 사용자 보안 자격증명 정보 입력
 
 ## appspec.yml 파일 생성 
