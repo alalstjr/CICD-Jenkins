@@ -876,6 +876,30 @@ AWS CodeDeploy
 
 ## 새로운 Item 생성
 
+### React 빌드 조치
+
+1. 빌드 후 조치
+2. Deploy an application to AWS CodeDeploy
+3. AWS CodeDeploy Application Name
+   1. neodigm-websocket-client-app (git 저장소 이름으로 기준 잡았다.)
+4. AWS CodeDeploy Deployment Group
+5. AWS CodeDeploy Deployment Config
+6. CodeDeployDefault.AllAtOnce
+7. AWS Region
+8. 서울 리전
+9. S3 Bucket
+10. {버킷 이름}
+11. S3 Prefix
+12. {폴더 명}
+13. Include Files
+    1. appspec.yml, build/*, sh/*
+14. Exclude Files
+    1. node_modules
+15. Use Access/Secret keys
+16. 위에서 만든 jenkins-user 사용자 보안 자격증명 정보 입력
+
+### Spring 빌드 조치
+
 1. 빌드 후 조치
 2. Deploy an application to AWS CodeDeploy
 3. AWS CodeDeploy Application Name
