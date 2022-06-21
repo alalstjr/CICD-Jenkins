@@ -904,22 +904,22 @@ files:
 permissions:
   - object: /
     pattern: "**"
-    owner: ec2-user
-    group: ec2-user
+    owner: root
+    group: root
 
 hooks:
   AfterInstall:
-    - location: stop.sh 
+    - location: stop.sh
       timeout: 60
-      runas: ec2-user
+      runas: root
   ApplicationStart:
     - location: start.sh
       timeout: 60
-      runas: ec2-user
+      runas: root
   ValidateService:
     - location: health.sh
       timeout: 60
-      runas: ec2-user
+      runas: root
 ~~~
 
 > stop.sh
@@ -934,15 +934,14 @@ sudo yum install git -y
 
 PROJECT_NAME=Neodigm-websocket-restapi
 PROJECT_ROOT="/home/ec2-user/api"
-cd PROJECT_ROOT
-JAR_FILE="$PROJECT_ROOT/target/$PROJECT_NAME.jar"
+JAR_FILE_TARGET="$PROJECT_ROOT/target/$PROJECT_NAME.jar"
 
 DEPLOY_LOG="$PROJECT_ROOT/deploy.log"
 
 TIME_NOW=$(date +%c)
 
 # 현재 구동 중인 애플리케이션 pid 확인
-CURRENT_PID=$(pgrep -f $JAR_FILE)
+CURRENT_PID=$(pgrep -f $JAR_FILE_TARGET)
 
 # 프로세스가 켜져 있으면 종료
 if [ -z $CURRENT_PID ]; then
@@ -951,6 +950,7 @@ else
   echo "$TIME_NOW > 실행중인 $CURRENT_PID 애플리케이션 종료 " >> $DEPLOY_LOG
   kill -15 $CURRENT_PID
 fi
+
 ~~~
 sudo chmod 755 ./stop.sh
 
@@ -960,8 +960,8 @@ sudo chmod 755 ./stop.sh
 
 PROJECT_NAME=Neodigm-websocket-restapi
 PROJECT_ROOT="/home/ec2-user/api"
-cd PROJECT_ROOT
-JAR_FILE="$PROJECT_ROOT/target/$PROJECT_NAME.jar"
+JAR_FILE="$PROJECT_ROOT/$PROJECT_NAME.jar"
+JAR_FILE_TARGET="$PROJECT_ROOT/target/$PROJECT_NAME.jar"
 
 APP_LOG="$PROJECT_ROOT/application.log"
 ERROR_LOG="$PROJECT_ROOT/error.log"
@@ -971,26 +971,30 @@ TIME_NOW=$(date +%c)
 
 # build 파일 복사
 echo "$TIME_NOW > $JAR_FILE 파일 복사" >> $DEPLOY_LOG
-cp $JAR_FILE $PROJECT_ROOT/$PROJECT_NAME.jar
+cp $JAR_FILE_TARGET $JAR_FILE
 
 # jar 파일 실행
 echo "$TIME_NOW > $JAR_FILE 파일 실행" >> $DEPLOY_LOG
-nohup java -jar $JAR_FILE > $APP_LOG 2> $ERROR_LOG &
+nohup java -Dspring.profiles.active=deploy -jar $JAR_FILE > $APP_LOG 2> $ERROR_LOG &
 
 CURRENT_PID=$(pgrep -f $JAR_FILE)
 echo "$TIME_NOW > 실행된 프로세스 아이디 $CURRENT_PID 입니다." >> $DEPLOY_LOG
 ~~~
 sudo chmod 755 ./start.sh
 
+-Dspring.profiles.active=deploy 설정을 주는 이유는 spring properties 절대경로 구분위해서
+예시로 logging.file.path = /home/ec2-user/api/logs 이런식이다.
+
 > health.sh
 ~~~
 #!/bin/bash
+IP=$(curl ifconfig.me)
 echo "> Health check 시작"
-echo "> curl -s http://localhost:8443/api/health "
+echo "> curl -s https://$IP:8443/api/health "
 
 for RETRY_COUNT in {1..15}
 do
-  RESPONSE=$(curl -s http://localhost:8443/api/health)
+  RESPONSE=$(curl -s https://$IP:8443/api/health)
   UP_COUNT=$(echo $RESPONSE | grep 'UP' | wc -l)
 
   if [ $UP_COUNT -ge 1 ]
