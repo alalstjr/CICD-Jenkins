@@ -746,6 +746,277 @@ nohup sudo java -jar $REPOSITORY/*.jar &
 sudo chmod 755 ./spring.sh
 ./spring.sh 으로 실행
 
+# AWS S3, CodeDeploy 연동하기
+
+## IAM 사용자
+
+각자의 iam을 사용하는 것을 권장(han, park, song): 누가 어떤 작업을 했는지 추적할 수 있음.
+- jenkins-user 사용자 추가
+- jenkins에서 S3와 CodeDeploy에 접근하기 위한 IAM 유저 추가, Access key 파일은 따로 보관.
+  - <권한>
+  - AmazonS3FullAccess
+  - AWSCodeDeployFullAccess
+
+## IAM 역할이란 무엇입니까?
+
+- IAM 역할은 신뢰하는 개체에 권한을 부여하는 안전한 방법입니다. 개체의 예는 다음을 포함합니다.
+  - 다른 계정의 IAM 사용자
+  - AWS 리소스에서 작업을 수행해야 하는 EC2 인스턴스에서 실행 중인 애플리케이션 코드
+  - 계정 내 리소스에서 작업을 수행하여 기능을 제공해야 하는 AWS 서비스
+  - SAML을 통해 인증 연동을 사용하는 사내 디렉토리의 사용자
+  - IAM 역할은 권한을 부여하는 더욱 안전한 방법으로 짧은 기간 동안 유효한 키를 발행합니다.
+
+- 역할
+  - AWS 서비스에만 할당할 수 있는 권한
+  - EC2, CodeDeploy, SQS 등
+
+- 사용자
+  - AWS 서비스 외에 사용할 수 있는 권한
+  - 로컬PC, IDC서버 등
+
+## 역할 만들기
+
+1. 유형의 개체 선택
+지금 만들 권한은 EC2에서 사용할 것이기 때문에 사용자가 아닌 역할로 처리합니다.
+
+2. 권한 정책 연결 
+EC2RoleForA정도까지 검색하여 AmazonEC2RoleforAWS-CodeDeploy를 선택합니다.
+
+## 역할을 EC2 서비스에 등록
+
+해당 EC2 인스턴스 설정에서 [IAM 역할 연결/바꾸기]를 선택합니다.
+생성한 역할을 선택합니다.
+
+## CodeDeploy 에이전트 설치
+
+재부팅이 완료되었으면 CodeDeploy의 요청을 받을 수 있에 에이전트를 설치해야합니다.
+Amazon Linux 2 AMI (centos)환경에서 작업하였습니다.
+EC2에 접속해서 다음 명령어를 입력합니다.
+
+> aws s3 cp s3://aws-codedeploy-ap-northeast-2/latest/install . --region ap-northeast-2
+
+다음과 같은 메시지가 콘솔창에 출력됩니다.
+
+> download: s3://aws-codedeploy-ap-northeast-2/latest/install to ./install
+
+install 파일에 실행 권한을 추가하고 설치를 진행하는데, 설치가 안된다면 ruby를 설치하시면 됩니다.
+
+> chmod +x ./install && sudo ./install auto
+
+Agent가 정상적으로 실행되고 있는지 상태 검사를 합니다.
+다음과 같이 나오면 정상입니다.
+
+~~~
+sudo service codedeploy-agent status
+The AWS CodeDeploy agent is running as PID 3530
+~~~
+
+내부에 nginx 설정 혹은 SSL 설정은 맞추어 놓아야 한다.
+
+그 후 생성된 EC2 AMI 로 만들어 저장합니다.
+
+## 시작 템플릿 생성
+
+이름: jenkins-template
+AMI: jenkins-ami
+스토리지: EBS 범용 SSD(gp3) 30GB
+IAM 역할: jenkins-codedeploy
+보안 그룹: ec2-security-group -> 인바운드 허용 포트: 22(ssh), 80(http), 9000(운영)
+
+## CodeDeploy를 위한 권한 생성
+
+CodeDeploy에서 EC2에 접근하려면 마찬가지로 권한이 필요합니다.
+AWS의 서비스이니 조금전과 마찬가지로 IAM역할을 생성합니다.
+
+1. 유형의 개체 선택
+사용 사례 선택 -> codeDeploy
+
+2. 권한 선택
+CodeDeploy는 권한이 하나뿐이라서 선택 없이 바로 다음으로 넘어가면 됩니다.
+
+## CodeDeploy 생성
+
+CodeDeploy는 AWS의 배포 삼형제 중 하나입니다.
+- Code Commit
+  - 깃허브와 같은 코드 저장소의 역할 (거의 사용되지 않음)
+- Code Build
+  - Travis CI, Circle CI와 마찬가지로 빌드용 서비스(역시 거의 사용되지 않음)
+- CodeDeploy
+  - AWS의 배포 서비스
+  - Commit이나 Build는 대체제가 있어 AWS서비스를 사용하지 않지만, CodeDeploy는 대체제가 없음
+  - 오토 스케일링 그룹 배포, 블루 그린 배포, 롤링 배포, EC2 단독 배포 등 많은 기능을 지원
+
+현재 프로젝트에서 Commit은 github, build는 Circle CI 또는 Travis CI가 하고 있기 때문에 추가로 사용할 서비스는 CodeDeploy입니다.
+
+## 1. 애플리케이션 생성
+
+CodeDeploy서비스로 이동해서 [애플리케이션 생성] 버튼을 클릭하여 CodeDeploy의 이름과 컴퓨팅 플랫폼을 선택합니다.
+컴퓨팅 플랫폼에선 [EC2/온프레미스]를 선택합니다.
+
+## 2. 배포 그룹 생성
+
+생성이 완료되면 배포 그룹을 생성하라는 메시지를 볼 수 있습니다. 
+배포 그룹을 생성할 때 서비스 역할은 좀 전에 생성한 CodeDeploy용 IAM역할을 선택합니다.
+
+배포 유형에서는 1대의 EC2에만 배포하므로 현재 위치를 선택합니다. 
+배포할 서비스가 2대 이상이라면 블루/그린을 선택하면 됩니다.
+
+환경 구성은 [Amazon EC2 인스턴스]에 체크합니다.
+
+배포 설정과 로드밸런서를 선택합니다. 
+배포 구성이란 한번 배포할 때 몇 대의 서버에 배포할지를 결정합니다.
+2대 이상이라면 1대씩 배포할지, 30% 혹은 50%로 나눠서 배포할지 등등 여러 옵션이 있지만, 1대 서버다 보니 전체 배포하는 옵션으로 선택합니다.
+CodeDeployDefaultAllAtOnce는 한 번에 다 배포하는 것을 의미합니다.
+
+## Jenkins S3 CodeDeploy 배포
+
+### 플러그인 설치 
+
+AWS CodeDeploy 
+
+## 새로운 Item 생성
+
+1. 빌드 후 조치
+2. Deploy an application to AWS CodeDeploy
+3. AWS CodeDeploy Application Name
+4. AWS CodeDeploy Deployment Group
+5. AWS CodeDeploy Deployment Config
+   1. CodeDeployDefault.AllAtOnce
+6. AWS Region
+   1. 서울 리전
+7. S3 Bucket
+8. Use Access/Secret keys
+   1. 위에서 만든 jenkins-user 사용자 보안 자격증명 정보 입력
+
+## appspec.yml 파일 생성 
+
+codedeploy 에서 실행할 수 있도록 파일 생성 프로젝트 최상위 내부에 넣습니다.
+
+> appspec.yml
+~~~
+version: 0.0
+os: linux
+files:
+  - source:  /
+    destination: /home/ec2-user/api/
+    overwrite: yes
+
+permissions:
+  - object: /
+    pattern: "**"
+    owner: ec2-user
+    group: ec2-user
+
+hooks:
+  AfterInstall:
+    - location: stop.sh 
+      timeout: 60
+      runas: ec2-user
+  ApplicationStart:
+    - location: start.sh
+      timeout: 60
+      runas: ec2-user
+  ValidateService:
+    - location: health.sh
+      timeout: 60
+      runas: ec2-user
+~~~
+
+> stop.sh
+~~~
+#!/bin/bash
+
+sudo yum update -y
+sudo yum install java-11-amazon-corretto -y
+sudo rm /etc/localtime
+sudo ln -sf /usr/share/zoneinfo/Asia/Seoul /etc/localtime
+sudo yum install git -y
+
+PROJECT_NAME=Neodigm-websocket-restapi
+PROJECT_ROOT="/home/ec2-user/api"
+cd PROJECT_ROOT
+JAR_FILE="$PROJECT_ROOT/target/$PROJECT_NAME.jar"
+
+DEPLOY_LOG="$PROJECT_ROOT/deploy.log"
+
+TIME_NOW=$(date +%c)
+
+# 현재 구동 중인 애플리케이션 pid 확인
+CURRENT_PID=$(pgrep -f $JAR_FILE)
+
+# 프로세스가 켜져 있으면 종료
+if [ -z $CURRENT_PID ]; then
+  echo "$TIME_NOW > 현재 실행중인 애플리케이션이 없습니다" >> $DEPLOY_LOG
+else
+  echo "$TIME_NOW > 실행중인 $CURRENT_PID 애플리케이션 종료 " >> $DEPLOY_LOG
+  kill -15 $CURRENT_PID
+fi
+~~~
+sudo chmod 755 ./stop.sh
+
+> start.sh
+~~~
+#!/bin/bash
+
+PROJECT_NAME=Neodigm-websocket-restapi
+PROJECT_ROOT="/home/ec2-user/api"
+cd PROJECT_ROOT
+JAR_FILE="$PROJECT_ROOT/target/$PROJECT_NAME.jar"
+
+APP_LOG="$PROJECT_ROOT/application.log"
+ERROR_LOG="$PROJECT_ROOT/error.log"
+DEPLOY_LOG="$PROJECT_ROOT/deploy.log"
+
+TIME_NOW=$(date +%c)
+
+# build 파일 복사
+echo "$TIME_NOW > $JAR_FILE 파일 복사" >> $DEPLOY_LOG
+cp $JAR_FILE $PROJECT_ROOT/$PROJECT_NAME.jar
+
+# jar 파일 실행
+echo "$TIME_NOW > $JAR_FILE 파일 실행" >> $DEPLOY_LOG
+nohup java -jar $JAR_FILE > $APP_LOG 2> $ERROR_LOG &
+
+CURRENT_PID=$(pgrep -f $JAR_FILE)
+echo "$TIME_NOW > 실행된 프로세스 아이디 $CURRENT_PID 입니다." >> $DEPLOY_LOG
+~~~
+sudo chmod 755 ./start.sh
+
+> health.sh
+~~~
+#!/bin/bash
+echo "> Health check 시작"
+echo "> curl -s http://localhost:8443/api/health "
+
+for RETRY_COUNT in {1..15}
+do
+  RESPONSE=$(curl -s http://localhost:8443/api/health)
+  UP_COUNT=$(echo $RESPONSE | grep 'UP' | wc -l)
+
+  if [ $UP_COUNT -ge 1 ]
+  then # $up_count >= 1 ("UP" 문자열이 있는지 검증)
+      echo "> Health check 성공"
+      break
+  else
+      echo "> Health check의 응답을 알 수 없거나 혹은 status가 UP이 아닙니다."
+      echo "> Health check: ${RESPONSE}"
+  fi
+
+  if [ $RETRY_COUNT -eq 10 ]
+  then
+    echo "> Health check 실패. "
+    exit 1
+  fi
+
+  echo "> Health check 연결 실패. 재시도..."
+  sleep 10
+done
+exit 0
+~~~
+sudo chmod 755 ./health.sh
+
+배포 이전에 api 폴더를 ec2 에 생성해준다.
+
 # 참고
 
 https://itholic.github.io/qa-cicd/ - [CI/CD 란?]
@@ -754,3 +1025,4 @@ https://miiingo.tistory.com/171 - [Jenkins Docker]
 https://velog.io/@minholee_93/Jenkins-Springboot-Gradle-Github-CodeDeploy-ELB-9ck5x7mt4q - [Jenkins AWS 배포]
 https://velog.io/@minholee_93/Jenkins-Springboot-Gradle-Github-CodeDeploy-ELB-2-1yk5ze6ky0 - [Jenkins AWS 배포]
 https://blog.mint-soft.com/entry/mac-jenkins-%EC%8B%A4%ED%96%89-%EC%97%90%EB%9F%AC - [mac jenkins 실행 에러]
+https://gksdudrb922.tistory.com/200 - [Auto scaling]
