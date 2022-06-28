@@ -1083,6 +1083,7 @@ codedeploy 애플리케이션 배포 그룹의 설정
 2. 환경 구성
    1. Amazon EC2 Auto Scaling 그룹 체크
    2. 생성한 Auto Scaling 그룹 추가
+      1. 추가로 ec2 를 따로 넣고싶다면 체크하고 추가
 3. 배포 설정
    1. All
 4. 로드 밸런서
