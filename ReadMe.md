@@ -589,6 +589,11 @@ http {
         proxy_cache off;
         proxy_store off;
 
+        # 활동안하면 타임아웃 시키는 시간
+        proxy_send_timeout          3600s;
+        proxy_connect_timeout       3600s;
+        proxy_read_timeout          3600s;
+
         root /home/ec2-user/client/build;
         index index.html index.htm;
 
@@ -1063,6 +1068,25 @@ aws codedeploy 를 진행하다보면 dump 파일이 쌓이고 용량이 꽉차 
 > rm -rf "/opt/codedeploy-agen/deployment-root"
 
 health 체크 완료 후 덤프파일을 바로 지우도록 수정했다.
+
+## Auto Scaling 
+
+ALB 생성 후 Auto Scaling 연결 
+일단 간단한 Nginx + codedeploy 가 생성 연결되어있는 ec2 생성
+health check 만 될 수 있도록 공간만 마련한다
+나머지는 build 후 자동으로 체워진다.
+
+codedeploy 애플리케이션 배포 그룹의 설정
+
+1. 배포 유형
+   1. 현재 위치
+2. 환경 구성
+   1. Amazon EC2 Auto Scaling 그룹 체크
+   2. 생성한 Auto Scaling 그룹 추가
+3. 배포 설정
+   1. All
+4. 로드 밸런서
+   1. None Check
 
 # 참고
 
