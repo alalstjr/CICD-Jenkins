@@ -1087,6 +1087,7 @@ codedeploy 애플리케이션 배포 그룹의 설정
    1. All
 4. 로드 밸런서
    1. None Check
+5. 젠킨스에서 각각 client / backend 빌드 해주어 공간을 체워준다
 
 # 참고
 
