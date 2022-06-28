@@ -1071,6 +1071,9 @@ health 체크 완료 후 덤프파일을 바로 지우도록 수정했다.
 
 ## Auto Scaling 
 
+Auto Scaling 기본 구성 생성시
+IAM [ IAM 인스턴스 프로파일 jenkins-codedeploy ] codedeploy s3 에 접근할 수 있도록 권한 부여해야함
+
 ALB 생성 후 Auto Scaling 연결 
 일단 간단한 Nginx + codedeploy 가 생성 연결되어있는 ec2 생성
 health check 만 될 수 있도록 공간만 마련한다
